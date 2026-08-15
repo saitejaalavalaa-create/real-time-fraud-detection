@@ -28,3 +28,6 @@ checkpoints/
 data/raw/
 data/interim/
 data/processed/
+
+# Generated datasets
+data/*.csv
