@@ -74,25 +74,48 @@ def generate_transactions(
         "gift_cards",
     ]
 
-    normal_categories = [
-        "grocery",
-        "restaurants",
-        "fuel",
-        "transport",
-        "utilities",
-        "healthcare",
-        "retail",
-        "entertainment",
-    ]
-    unusual_categories = [
-        "travel",
-        "electronics",
-        "digital_goods",
-        "subscriptions",
-        "cash_advance",
-        "gaming",
-        "gift_cards",
-    ]
+    # Merchant category should be a useful, but not deterministic, signal. We give
+    # a modest probability boost to categories that are more often associated with
+    # suspicious behavior, while still allowing legitimate transactions in every
+    # category and fraud to appear in every category with a low probability.
+    merchant_category_risk = {
+        "grocery": 0.05,
+        "restaurants": 0.06,
+        "fuel": 0.07,
+        "transport": 0.08,
+        "utilities": 0.05,
+        "healthcare": 0.04,
+        "retail": 0.09,
+        "travel": 0.16,
+        "entertainment": 0.12,
+        "electronics": 0.18,
+        "digital_goods": 0.20,
+        "subscriptions": 0.15,
+        "cash_advance": 0.22,
+        "gaming": 0.26,
+        "gift_cards": 0.24,
+    }
+
+    category_probs = np.array(
+        [
+            0.16,
+            0.14,
+            0.08,
+            0.08,
+            0.09,
+            0.08,
+            0.12,
+            0.06,
+            0.06,
+            0.04,
+            0.03,
+            0.02,
+            0.02,
+            0.01,
+            0.01,
+        ],
+        dtype=float,
+    )
 
     # Create customer and merchant identifiers in a synthetic format; no real
     # customer or financial information is used.
@@ -147,12 +170,10 @@ def generate_transactions(
     foreign_idx = np.where(international_flag)[0]
     country[foreign_idx] = rng.choice(foreign_country_pool, size=len(foreign_idx))
 
-    # merchant_category distribution with an emphasis on ordinary spending in the
-    # base population and a higher likelihood of unusual categories for fraud.
-    merchant_category = rng.choice(
-        merchant_categories,
-        size=n_transactions,
-        p=np.array([0.15, 0.15, 0.08, 0.10, 0.10, 0.08, 0.12, 0.05, 0.05, 0.04, 0.03, 0.02, 0.01, 0.01, 0.01], dtype=float),
+    merchant_category = rng.choice(merchant_categories, size=n_transactions, p=category_probs)
+    merchant_category_risk_vector = np.array(
+        [merchant_category_risk[category] for category in merchant_category],
+        dtype=float,
     )
 
     # Transaction counts over 1 hour and 24 hours capture velocity, a classic fraud
@@ -185,8 +206,10 @@ def generate_transactions(
     failed_signal = np.log1p(failed_transactions_24h)
     distance_signal = np.log1p(distance_from_last_transaction_km)
     young_account_signal = (account_age_days < 30).astype(float)
-    unusual_merchant_signal = np.isin(merchant_category, unusual_categories).astype(float)
 
+    # Merchant category acts as a modest, probabilistic influence on risk rather
+    # than a deterministic rule. This keeps categories useful for modeling while
+    # ensuring that fraud is not simply defined by merchant type alone.
     risk_score = (
         1.8 * amount_z
         + 1.6 * is_new_device.astype(float)
@@ -196,7 +219,7 @@ def generate_transactions(
         + 1.1 * velocity_24h
         + 1.2 * distance_signal
         + 1.5 * young_account_signal
-        + 1.0 * unusual_merchant_signal
+        + 0.8 * merchant_category_risk_vector
     )
 
     # Target fraud rate is roughly 1.5% of transactions, which matches the
@@ -230,10 +253,6 @@ def generate_transactions(
         1.0,
         180.0,
     )
-    merchant_category[fraud_mask] = rng.choice(
-        unusual_categories,
-        size=np.sum(fraud_mask),
-    )
 
     # For normal transactions, keep the distribution within expected business
     # patterns and prevent suspicious signals from dominating the majority class.
@@ -257,10 +276,6 @@ def generate_transactions(
         rng.lognormal(mean=4.8, sigma=0.8, size=np.sum(legit_mask)),
         20.0,
         4000.0,
-    )
-    merchant_category[legit_mask] = rng.choice(
-        normal_categories,
-        size=np.sum(legit_mask),
     )
 
     df = pd.DataFrame(
