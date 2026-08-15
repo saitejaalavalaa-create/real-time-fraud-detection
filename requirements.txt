@@ -1,0 +1,17 @@
+# Core data science stack
+pandas
+numpy
+scikit-learn
+xgboost
+
+# Validation and testing
+pytest
+
+# Optional app/ops tooling for later phases
+# fastapi
+# uvicorn
+# mlflow
+# feast
+# shap
+# streamlit
+# python-dotenv
