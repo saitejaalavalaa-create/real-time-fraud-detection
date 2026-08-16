@@ -197,66 +197,145 @@ def generate_transactions(
         5000.0,
     )
 
-    # Build a fraud risk score using realistic signals that are commonly
-    # associated with fraudulent transactions. We then select the highest-risk
-    # minority rows as fraud cases.
-    amount_z = (np.log1p(amount) - np.mean(np.log1p(amount))) / np.std(np.log1p(amount))
+        # Build a probabilistic fraud propensity from realistic transaction signals.
+    # Unlike a deterministic top-risk selection, this introduces overlap between
+    # legitimate and fraudulent transactions so models must generalize.
+    amount_z = (
+        np.log1p(amount) - np.mean(np.log1p(amount))
+    ) / np.std(np.log1p(amount))
+
     velocity_1h = np.log1p(transactions_1h)
     velocity_24h = np.log1p(transactions_24h)
     failed_signal = np.log1p(failed_transactions_24h)
     distance_signal = np.log1p(distance_from_last_transaction_km)
     young_account_signal = (account_age_days < 30).astype(float)
 
-    # Merchant category acts as a modest, probabilistic influence on risk rather
-    # than a deterministic rule. This keeps categories useful for modeling while
-    # ensuring that fraud is not simply defined by merchant type alone.
     risk_score = (
-        1.8 * amount_z
-        + 1.6 * is_new_device.astype(float)
-        + 1.7 * international_flag.astype(float)
-        + 1.2 * failed_signal
-        + 1.3 * velocity_1h
-        + 1.1 * velocity_24h
-        + 1.2 * distance_signal
-        + 1.5 * young_account_signal
-        + 0.8 * merchant_category_risk_vector
+        0.65 * amount_z
+        + 0.55 * is_new_device.astype(float)
+        + 0.65 * international_flag.astype(float)
+        + 0.55 * failed_signal
+        + 0.60 * velocity_1h
+        + 0.45 * velocity_24h
+        + 0.50 * distance_signal
+        + 0.45 * young_account_signal
+        + 0.30 * merchant_category_risk_vector
     )
 
-    # Target fraud rate is roughly 1.5% of transactions, which matches the
-    # business requirement for a minority-class fraud problem.
-    target_fraud_count = max(1, int(round(n_transactions * 0.015)))
-    fraud_indices = np.argsort(risk_score)[-target_fraud_count:]
-    is_fraud = np.zeros(n_transactions, dtype=bool)
-    is_fraud[fraud_indices] = True
+    # Add unobserved randomness so fraud is not a deterministic function
+    # of the exact features used by the model.
+    latent_score = risk_score + rng.normal(
+        loc=0.0,
+        scale=1.35,
+        size=n_transactions,
+    )
 
-    # Apply targeted adjustments to fraud rows so that the suspicious feature
-    # patterns appear realistic and strongly associated with fraud.
+    # Convert latent risk into a probability.
+    fraud_probability = 1.0 / (
+        1.0 + np.exp(-(latent_score - 4.8))
+    )
+
+    fraud_probability = np.clip(
+        fraud_probability,
+        0.001,
+        0.20,
+    )
+
+    is_fraud = rng.random(n_transactions) < fraud_probability
+
+    # Keep the dataset close to the requested 1.5% fraud prevalence.
+    target_fraud_rate = 0.015
+    current_fraud_rate = float(is_fraud.mean())
+
+    if current_fraud_rate > target_fraud_rate:
+        fraud_candidates = np.where(is_fraud)[0]
+        keep_count = max(
+            1,
+            int(round(n_transactions * target_fraud_rate)),
+        )
+
+        if len(fraud_candidates) > keep_count:
+            keep_scores = latent_score[fraud_candidates]
+            selected = fraud_candidates[
+                np.argsort(keep_scores)[-keep_count:]
+            ]
+            is_fraud[:] = False
+            is_fraud[selected] = True
+
+    elif current_fraud_rate < target_fraud_rate:
+        legitimate_candidates = np.where(~is_fraud)[0]
+        add_count = int(
+            round(n_transactions * target_fraud_rate)
+            - is_fraud.sum()
+        )
+
+        if add_count > 0:
+            add_count = min(add_count, len(legitimate_candidates))
+            selected = legitimate_candidates[
+                np.argsort(latent_score[legitimate_candidates])[-add_count:]
+            ]
+            is_fraud[selected] = True
+
+    # Apply moderate distribution shifts to fraudulent transactions.
+    # These shifts intentionally overlap with legitimate behavior.
     fraud_mask = is_fraud
+
     amount[fraud_mask] = np.clip(
-        rng.lognormal(mean=4.2, sigma=0.8, size=np.sum(fraud_mask)),
-        25.0,
+        amount[fraud_mask]
+        * rng.lognormal(
+            mean=0.15,
+            sigma=0.45,
+            size=np.sum(fraud_mask),
+        ),
+        5.0,
         25000.0,
     )
-    is_new_device[fraud_mask] = rng.random(np.sum(fraud_mask)) < 0.75
-    country[fraud_mask] = rng.choice(countries, size=np.sum(fraud_mask))
-    international_flag[fraud_mask] = rng.random(np.sum(fraud_mask)) < 0.70
-    failed_transactions_24h[fraud_mask] = rng.poisson(6.0, size=np.sum(fraud_mask))
-    transactions_1h[fraud_mask] = rng.poisson(8.0, size=np.sum(fraud_mask))
-    transactions_24h[fraud_mask] = rng.poisson(20.0, size=np.sum(fraud_mask))
-    distance_from_last_transaction_km[fraud_mask] = np.clip(
-        rng.gamma(shape=3.0, scale=90.0, size=np.sum(fraud_mask)),
-        20.0,
-        5000.0,
-    )
-    account_age_days[fraud_mask] = np.clip(
-        rng.lognormal(mean=2.3, sigma=0.8, size=np.sum(fraud_mask)),
-        1.0,
-        180.0,
+
+    is_new_device[fraud_mask] = (
+        rng.random(np.sum(fraud_mask)) < 0.35
     )
 
-    # For normal transactions, keep the distribution within expected business
-    # patterns and prevent suspicious signals from dominating the majority class.
-    legit_mask = ~fraud_mask
+    international_flag[fraud_mask] = (
+        rng.random(np.sum(fraud_mask)) < 0.25
+    )
+
+    failed_transactions_24h[fraud_mask] = rng.poisson(
+        2.0,
+        size=np.sum(fraud_mask),
+    )
+
+    transactions_1h[fraud_mask] = rng.poisson(
+        4.0,
+        size=np.sum(fraud_mask),
+    )
+
+    transactions_24h[fraud_mask] = rng.poisson(
+        10.0,
+        size=np.sum(fraud_mask),
+    )
+
+    distance_from_last_transaction_km[fraud_mask] = np.clip(
+        rng.gamma(
+            shape=2.5,
+            scale=60.0,
+            size=np.sum(fraud_mask),
+        ),
+        0.0,
+        1500.0,
+    )
+
+    account_age_days[fraud_mask] = np.clip(
+        account_age_days[fraud_mask]
+        * rng.lognormal(
+            mean=-0.15,
+            sigma=0.65,
+            size=np.sum(fraud_mask),
+        ),
+        5.0,
+        4000.0,
+    )
+
+    legit_mask = ~fraud_mask    
     amount[legit_mask] = np.clip(
         rng.lognormal(mean=2.9, sigma=0.65, size=np.sum(legit_mask)),
         1.0,
