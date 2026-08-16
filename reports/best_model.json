@@ -1,11 +1,11 @@
 {
-  "best_model": "logistic_regression",
+  "best_model": "random_forest",
   "metrics": {
-    "accuracy": 0.9874,
-    "precision": 0.544280442804428,
-    "recall": 0.9833333333333333,
-    "f1": 0.7007125890736342,
-    "roc_auc": 0.9992809221658207,
-    "pr_auc": 0.9759162398523215
+    "accuracy": 0.9755,
+    "precision": 0.1856,
+    "recall": 0.19761499148211242,
+    "f1": 0.19141914191419143,
+    "roc_auc": 0.8539134196376112,
+    "pr_auc": 0.13813617247331994
   }
 }

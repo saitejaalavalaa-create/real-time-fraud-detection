@@ -13,6 +13,7 @@ functions.
 from __future__ import annotations
 
 import json
+import joblib
 import sys
 from pathlib import Path
 from typing import Any
@@ -209,6 +210,12 @@ def save_processed_outputs(
     preprocessor = build_preprocessor(X_train)
     X_train_processed = preprocessor.fit_transform(X_train)
     X_test_processed = preprocessor.transform(X_test)
+    Path("artifacts/preprocessing").mkdir(parents=True, exist_ok=True)
+    
+    joblib.dump(
+        preprocessor,
+        "artifacts/preprocessing/preprocessor.joblib",
+    )
 
     _save_array(X_train_processed, processed_dir / "X_train.npy")
     _save_array(X_test_processed, processed_dir / "X_test.npy")
@@ -248,6 +255,12 @@ def main() -> None:
     preprocessor = build_preprocessor(X_train)
     X_train_processed = preprocessor.fit_transform(X_train)
     X_test_processed = preprocessor.transform(X_test)
+    Path("artifacts/preprocessing").mkdir(parents=True, exist_ok=True)
+
+    joblib.dump(
+        preprocessor,
+        "artifacts/preprocessing/preprocessor.joblib",
+    )
 
     transformed_feature_names = list(preprocessor.get_feature_names_out())
     metadata_path = Path("data/processed/dataset_metadata.json")

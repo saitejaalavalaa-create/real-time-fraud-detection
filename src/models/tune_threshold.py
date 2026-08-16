@@ -171,8 +171,8 @@ def find_recall_constrained_threshold(df_results, min_recall=0.95):
     """
     candidates = df_results[df_results["recall"] >= min_recall]
     if len(candidates) > 0:
-        # Return the lowest threshold that achieves min_recall
-        idx_best = candidates["threshold"].idxmin()
+        # Return the highest threshold that still achieves min_recall
+        idx_best = candidates["threshold"].idxmax()
         return candidates.loc[idx_best, "threshold"], candidates.loc[idx_best, "recall"]
     return None, None
 
@@ -303,7 +303,10 @@ def main():
     y_test = data["y_test"]
 
     # Define thresholds to evaluate
-    thresholds = np.arange(0.10, 0.95, 0.05)
+    thresholds = np.concatenate([
+    np.arange(0.01, 0.10, 0.01),
+    np.arange(0.10, 0.95, 0.05),
+])
     print(f"\nEvaluating thresholds: {thresholds}\n")
 
     # Evaluate all models

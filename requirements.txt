@@ -3,15 +3,12 @@ pandas
 numpy
 scikit-learn
 xgboost
+joblib
+matplotlib
+
+# API and real-time inference
+fastapi
+uvicorn
 
 # Validation and testing
 pytest
-
-# Optional app/ops tooling for later phases
-# fastapi
-# uvicorn
-# mlflow
-# feast
-# shap
-# streamlit
-# python-dotenv

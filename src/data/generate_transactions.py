@@ -224,138 +224,39 @@ def generate_transactions(
 
     # Add unobserved randomness so fraud is not a deterministic function
     # of the exact features used by the model.
-    latent_score = risk_score + rng.normal(
+    latent_score = 2.0 * risk_score + rng.normal(
         loc=0.0,
-        scale=1.35,
+        scale=0.45,
         size=n_transactions,
     )
 
-    # Convert latent risk into a probability.
-    fraud_probability = 1.0 / (
-        1.0 + np.exp(-(latent_score - 4.8))
-    )
+    # Calibrate fraud probability to approximately 1.5% prevalence.
+    target_fraud_rate = 0.015
 
-    fraud_probability = np.clip(
-        fraud_probability,
-        0.001,
-        0.20,
-    )
+    def sigmoid(x):
+        return 1.0 / (1.0 + np.exp(-np.clip(x, -30, 30)))
 
+    lower = -15.0
+    upper = 5.0
+
+    for _ in range(60):
+        midpoint = (lower + upper) / 2.0
+        fraud_probability = sigmoid(latent_score + midpoint)
+
+        if fraud_probability.mean() > target_fraud_rate:
+            upper = midpoint
+        else:
+            lower = midpoint
+
+    intercept = (lower + upper) / 2.0
+    fraud_probability = sigmoid(latent_score + intercept)
+
+    # Sample fraud probabilistically instead of forcing exact labels.
     is_fraud = rng.random(n_transactions) < fraud_probability
 
-    # Keep the dataset close to the requested 1.5% fraud prevalence.
-    target_fraud_rate = 0.015
-    current_fraud_rate = float(is_fraud.mean())
 
-    if current_fraud_rate > target_fraud_rate:
-        fraud_candidates = np.where(is_fraud)[0]
-        keep_count = max(
-            1,
-            int(round(n_transactions * target_fraud_rate)),
-        )
 
-        if len(fraud_candidates) > keep_count:
-            keep_scores = latent_score[fraud_candidates]
-            selected = fraud_candidates[
-                np.argsort(keep_scores)[-keep_count:]
-            ]
-            is_fraud[:] = False
-            is_fraud[selected] = True
-
-    elif current_fraud_rate < target_fraud_rate:
-        legitimate_candidates = np.where(~is_fraud)[0]
-        add_count = int(
-            round(n_transactions * target_fraud_rate)
-            - is_fraud.sum()
-        )
-
-        if add_count > 0:
-            add_count = min(add_count, len(legitimate_candidates))
-            selected = legitimate_candidates[
-                np.argsort(latent_score[legitimate_candidates])[-add_count:]
-            ]
-            is_fraud[selected] = True
-
-    # Apply moderate distribution shifts to fraudulent transactions.
-    # These shifts intentionally overlap with legitimate behavior.
-    fraud_mask = is_fraud
-
-    amount[fraud_mask] = np.clip(
-        amount[fraud_mask]
-        * rng.lognormal(
-            mean=0.15,
-            sigma=0.45,
-            size=np.sum(fraud_mask),
-        ),
-        5.0,
-        25000.0,
-    )
-
-    is_new_device[fraud_mask] = (
-        rng.random(np.sum(fraud_mask)) < 0.35
-    )
-
-    international_flag[fraud_mask] = (
-        rng.random(np.sum(fraud_mask)) < 0.25
-    )
-
-    failed_transactions_24h[fraud_mask] = rng.poisson(
-        2.0,
-        size=np.sum(fraud_mask),
-    )
-
-    transactions_1h[fraud_mask] = rng.poisson(
-        4.0,
-        size=np.sum(fraud_mask),
-    )
-
-    transactions_24h[fraud_mask] = rng.poisson(
-        10.0,
-        size=np.sum(fraud_mask),
-    )
-
-    distance_from_last_transaction_km[fraud_mask] = np.clip(
-        rng.gamma(
-            shape=2.5,
-            scale=60.0,
-            size=np.sum(fraud_mask),
-        ),
-        0.0,
-        1500.0,
-    )
-
-    account_age_days[fraud_mask] = np.clip(
-        account_age_days[fraud_mask]
-        * rng.lognormal(
-            mean=-0.15,
-            sigma=0.65,
-            size=np.sum(fraud_mask),
-        ),
-        5.0,
-        4000.0,
-    )
-
-    legit_mask = ~fraud_mask    
-    amount[legit_mask] = np.clip(
-        rng.lognormal(mean=2.9, sigma=0.65, size=np.sum(legit_mask)),
-        1.0,
-        5000.0,
-    )
-    is_new_device[legit_mask] = rng.random(np.sum(legit_mask)) < 0.08
-    international_flag[legit_mask] = rng.random(np.sum(legit_mask)) < 0.04
-    failed_transactions_24h[legit_mask] = rng.poisson(0.35, size=np.sum(legit_mask))
-    transactions_1h[legit_mask] = rng.poisson(1.2, size=np.sum(legit_mask))
-    transactions_24h[legit_mask] = rng.poisson(4.0, size=np.sum(legit_mask))
-    distance_from_last_transaction_km[legit_mask] = np.clip(
-        rng.gamma(shape=1.8, scale=18.0, size=np.sum(legit_mask)),
-        0.0,
-        800.0,
-    )
-    account_age_days[legit_mask] = np.clip(
-        rng.lognormal(mean=4.8, sigma=0.8, size=np.sum(legit_mask)),
-        20.0,
-        4000.0,
-    )
+    
 
     df = pd.DataFrame(
         {
