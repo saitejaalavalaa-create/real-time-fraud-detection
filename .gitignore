@@ -34,3 +34,7 @@ data/processed/
 data/*.csv
 # Runtime monitoring data
 monitoring/predictions.csv
+
+# AWS CLI installer artifacts
+aws/
+awscliv2.zip

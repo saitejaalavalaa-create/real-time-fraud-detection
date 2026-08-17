@@ -290,3 +290,125 @@ After sending predictions through the API:
 ```bash
 python src/monitoring/monitor_predictions.py
 ```
+## AWS Deployment
+
+The application is containerized with Docker and deployed on AWS using Amazon ECR and Amazon EC2.
+
+### Deployment Architecture
+
+```text
+GitHub Repository
+      |
+      v
+Docker Image
+      |
+      v
+Amazon ECR
+      |
+      v
+Amazon EC2
+      |
+      v
+Docker Container
+      |
+      v
+FastAPI
+      |
+      v
+Public Fraud Detection API
+```
+
+### AWS Services
+
+* **Amazon ECR** stores the private Docker image.
+* **Amazon EC2** hosts the FastAPI container.
+* **IAM Roles** provide EC2 temporary permissions to pull images from ECR.
+* **Security Groups** control access to SSH and the API port.
+
+### Build the Docker Image
+
+```bash
+docker build -t fraud-detection-api:latest .
+```
+
+### Run Locally with Docker
+
+```bash
+docker run -d \
+  --name fraud-api \
+  -p 8000:8000 \
+  fraud-detection-api:latest
+```
+
+Test the health endpoint:
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+### Push to Amazon ECR
+
+Authenticate Docker:
+
+```bash
+aws ecr get-login-password \
+  --region us-east-1 \
+| docker login \
+  --username AWS \
+  --password-stdin \
+  <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
+```
+
+Tag the image:
+
+```bash
+docker tag fraud-detection-api:latest \
+<AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/fraud-detection-api:latest
+```
+
+Push the image:
+
+```bash
+docker push \
+<AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/fraud-detection-api:latest
+```
+
+### Run on EC2
+
+After installing and starting Docker on the EC2 instance:
+
+```bash
+aws ecr get-login-password \
+  --region us-east-1 \
+| sudo docker login \
+  --username AWS \
+  --password-stdin \
+  <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
+```
+
+Pull the image:
+
+```bash
+sudo docker pull \
+<AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/fraud-detection-api:latest
+```
+
+Run the container:
+
+```bash
+sudo docker run -d \
+  --name fraud-api \
+  --restart unless-stopped \
+  -p 8000:8000 \
+  <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/fraud-detection-api:latest
+```
+
+The deployed API exposes:
+
+```text
+GET  /health
+POST /predict
+GET  /metrics
+```
+
+For security, SSH access should be restricted to trusted IP ranges while the public demo API can be exposed separately through its application port.
