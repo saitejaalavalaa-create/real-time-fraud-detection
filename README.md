@@ -4,7 +4,17 @@ An end-to-end machine learning system for detecting potentially fraudulent finan
 
 The project includes synthetic data generation, exploratory analysis, feature engineering, imbalanced classification, model comparison, threshold tuning, FastAPI inference, Docker containerization, AWS deployment, prediction logging, and monitoring.
 
-Source / Model Precision Recall F1 ROC-AUC Your Logistic Regression 0.056 0.719 0.103 0.857 Your Random Forest 0.186 0.198 0.191 0.854 Your XGBoost 0.088 0.520 0.150 0.839 Scientific Reports RF ~0.82 ~0.83 ~0.82 ~0.98 Scientific Reports XGBoost lower precision than RF ~0.84 comparable ~0.97 XGBoost ~0.92 ~0.95 ~0.93 ~1.00
+## Model Performance Comparison
+
+| Source / Model | Precision | Recall | F1 | ROC-AUC |
+|---|---:|---:|---:|---:|
+| Our Logistic Regression | 0.056 | 0.719 | 0.103 | 0.857 |
+| Our Random Forest | 0.186 | 0.198 | 0.191 | 0.854 |
+| Our XGBoost | 0.088 | 0.520 | 0.150 | 0.839 |
+| Scientific Reports - Random Forest | ~0.82 | ~0.83 | ~0.82 | ~0.98 |
+| Scientific Reports - XGBoost | Lower than RF | ~0.84 | Comparable | ~0.97 |
+| XGBoost Benchmark | ~0.92 | ~0.95 | ~0.93 | ~1.00 |
+
 
 ## Dataset
 
@@ -123,16 +133,6 @@ Gradient-boosted trees are evaluated as another nonlinear fraud-detection approa
 
 The models are evaluated on the original imbalanced test distribution rather than artificially balancing the test set.
 
-## Model Performance Comparison
-
-| Source / Model | Precision | Recall | F1 | ROC-AUC |
-|---|---:|---:|---:|---:|
-| Our Logistic Regression | 0.056 | 0.719 | 0.103 | 0.857 |
-| Our Random Forest | 0.186 | 0.198 | 0.191 | 0.854 |
-| Our XGBoost | 0.088 | 0.520 | 0.150 | 0.839 |
-| Scientific Reports - Random Forest | ~0.82 | ~0.83 | ~0.82 | ~0.98 |
-| Scientific Reports - XGBoost | Lower than RF | ~0.84 | Comparable | ~0.97 |
-| XGBoost Benchmark | ~0.92 | ~0.95 | ~0.93 | ~1.00 |
 
 > **Note:** External benchmark results are shown only for comparison. They were obtained using different datasets, preprocessing methods, class distributions, sampling strategies, and experimental settings, so they are not directly comparable to this project's results.
 
