@@ -1,155 +1,241 @@
 # Real-Time Fraud Detection System
 
-An end-to-end machine learning system for detecting potentially fraudulent financial transactions in real time.
+An end-to-end machine learning system for detecting potentially fraudulent financial transactions using transaction behavior, device information, payment activity, transaction velocity, and geographic signals.
 
-The project covers synthetic transaction generation, exploratory analysis, feature engineering, imbalanced classification, model comparison, threshold tuning, real-time inference with FastAPI, prediction logging, and lightweight model monitoring.
+The project includes synthetic data generation, exploratory analysis, feature engineering, imbalanced classification, model comparison, threshold tuning, FastAPI inference, Docker containerization, AWS deployment, prediction logging, and monitoring.
 
-## Key Features
+## Dataset
 
-* Synthetic dataset with 200,000 financial transactions and approximately 1.5% fraud prevalence
-* Feature engineering for transaction amount, velocity, device behavior, international activity, account history, and transaction distance
-* Logistic Regression, Random Forest, and XGBoost model comparison
-* Model evaluation using ROC-AUC, PR-AUC, precision, recall, F1, and confusion matrices
-* Decision-threshold tuning for imbalanced fraud detection
-* Real-time fraud scoring through a FastAPI REST API
-* `APPROVE` and `REVIEW` risk decisions
-* Prediction logging for production monitoring
-* API monitoring metrics including prediction volume, review rate, and average fraud probability
+The project uses a synthetic transaction dataset containing approximately:
 
-## System Architecture
+* **200,000 transactions**
+* **~1.5% fraudulent transactions**
+* **~98.5% legitimate transactions**
 
-The system follows an end-to-end machine learning workflow from transaction generation to real-time fraud monitoring.
+Fraud labels are generated probabilistically from combinations of suspicious transaction signals rather than a single deterministic rule.
+
+### Target
 
 ```text
-Synthetic Transaction Data
-          |
-          v
-Exploratory Data Analysis
-          |
-          v
-Feature Engineering
-          |
-          v
-Preprocessing Pipeline
-          |
-          v
-Model Training
-(Logistic Regression / Random Forest / XGBoost)
-          |
-          v
-Model Evaluation + Threshold Tuning
-          |
-          v
-Random Forest Model
-          |
-          v
-FastAPI Real-Time Inference
-          |
-          v
-Fraud Probability
-          |
-          v
-Threshold = 0.45
-      /         \
-     v           v
- APPROVE       REVIEW
-     \           /
-      v         v
- Prediction Logging
-          |
-          v
-Monitoring Metrics
+0 / False  → Legitimate transaction
+1 / True   → Fraudulent transaction
 ```
 
-### Current Inference Flow
+### Important Features
 
-A transaction is submitted to the `/predict` endpoint. The saved preprocessing pipeline transforms the raw transaction into the same feature representation used during model training.
+The dataset includes behavioral and transaction-level features such as:
 
-The trained Random Forest model generates a fraud probability, and the tuned `0.45` decision threshold converts that probability into an `APPROVE` or `REVIEW` decision.
+```text
+amount
+merchant_category
+country
+payment_method
+account_age_days
+card_age_days
+is_new_device
+is_international
+failed_transactions_24h
+transactions_1h
+transactions_24h
+average_customer_amount
+distance_from_last_transaction_km
+```
 
-Each prediction is written to `monitoring/predictions.csv`, allowing the monitoring component to track prediction volume, review rate, and average fraud probability.
+## Class Imbalance
+
+Fraud detection is highly imbalanced.
+
+Only about **1.5% of transactions are fraudulent**, so standard accuracy alone is not sufficient to evaluate the models.
+
+For example, a model predicting every transaction as legitimate could achieve approximately 98.5% accuracy while detecting zero fraud.
+
+Because of this, the project emphasizes:
+
+```text
+Precision
+Recall
+F1 Score
+ROC-AUC
+PR-AUC
+Confusion Matrix
+```
+
+## Data Preparation
+
+The target variable is separated from the predictive features.
+
+Identifiers such as transaction ID, customer ID, merchant ID, and device ID are excluded from direct model training.
+
+Timestamp information is transformed into:
+
+```text
+hour
+day_of_week
+day_of_month
+month
+is_weekend
+```
+
+Numerical features are standardized with `StandardScaler`.
+
+Categorical variables are transformed using `OneHotEncoder`.
+
+The final preprocessing pipeline produces approximately **45 transformed model features**.
+
+## Train/Test Split
+
+The dataset is split using a stratified train/test split:
+
+```text
+Training data: 80%
+Testing data:  20%
+```
+
+Stratification preserves the fraud rate in both datasets.
+
+Example:
+
+```text
+Training rows: ~160,000
+Testing rows:  ~40,000
+Fraud rate:    ~1.5%
+```
+
+## Models
+
+Three supervised classification algorithms are compared.
+
+### Logistic Regression
+
+Provides a simple and interpretable baseline model.
+
+### Random Forest
+
+Combines multiple decision trees and captures nonlinear relationships between transaction behaviors.
+
+### XGBoost
+
+Gradient-boosted trees are evaluated as another nonlinear fraud-detection approach.
 
 ## Model Performance
 
-The models were evaluated on a stratified test set of 40,000 transactions. Because fraud represents only about 1.5% of the dataset, PR-AUC, precision, recall, and F1 are more informative than accuracy alone.
+The models are evaluated on the original imbalanced test distribution rather than artificially balancing the test set.
 
-| Model | Precision | Recall | F1 | ROC-AUC | PR-AUC |
-|---|---:|---:|---:|---:|---:|
-| Logistic Regression | 0.0557 | 0.7189 | 0.1034 | 0.8569 | 0.1333 |
-| Random Forest | 0.1856 | 0.1976 | 0.1914 | 0.8539 | **0.1381** |
-| XGBoost | 0.0879 | 0.5196 | 0.1503 | 0.8385 | 0.1330 |
+Source / Model	Precision	Recall	F1	ROC-AUC
+Your Logistic Regression	0.056	0.719	0.103	0.857
+Your Random Forest	0.186	0.198	0.191	0.854
+Your XGBoost	0.088	0.520	0.150	0.839
+Scientific Reports RF	~0.82	~0.83	~0.82	~0.98
+Scientific Reports XGBoost	lower precision than RF	~0.84	comparable	~0.97
+XGBoost	~0.92	~0.95	~0.93	~1.00
 
-Random Forest achieved the highest PR-AUC and was selected as the production inference model.
+The fraud prevalence is approximately `0.015`, meaning a random classifier would have a PR-AUC near `0.015`.
 
-### Threshold Tuning
+The best model therefore achieves a PR-AUC roughly **9× higher than the random baseline**.
 
-Using the default classification threshold is not always appropriate for highly imbalanced fraud detection. Threshold analysis was therefore performed to evaluate the trade-off between precision and recall.
+## Why Accuracy Is Not the Main Metric
 
-For the Random Forest model, a threshold of `0.45` produced:
+Consider an imbalanced dataset with:
 
-* Precision: **0.1675**
-* Recall: **0.2794**
-* F1 Score: **0.2095**
-* True Positives: **164**
-* False Positives: **815**
-* False Negatives: **423**
-
-The `0.45` threshold is used by the real-time inference layer to convert model probabilities into `APPROVE` or `REVIEW` decisions.
-
-## API Usage
-
-The trained model is exposed through a FastAPI application for real-time fraud scoring.
-
-### Start the API
-
-```bash
-uvicorn api.main:app --reload
+```text
+98.5% legitimate
+1.5% fraudulent
 ```
 
-The API runs locally at port `8000`.
+A classifier predicting every transaction as legitimate would achieve approximately:
 
-### Health Check
-
-```bash
-curl http://127.0.0.1:8000/health
+```text
+Accuracy ≈ 98.5%
+Fraud Recall = 0%
 ```
 
-Example response:
+That model would be useless for fraud detection.
+
+For this reason, the project prioritizes PR-AUC, precision, recall, and F1 rather than optimizing accuracy alone.
+
+## Threshold Tuning
+
+The default probability threshold of `0.50` is not automatically optimal for fraud detection.
+
+The project evaluates multiple thresholds to understand the trade-off between:
+
+```text
+False positives
+        ↕
+Fraud detection recall
+```
+
+The deployed Random Forest currently uses:
+
+```text
+Decision threshold = 0.45
+```
+
+Prediction logic:
+
+```text
+Fraud probability < 0.45  → APPROVE
+Fraud probability ≥ 0.45  → REVIEW
+```
+
+At this operating point, the model prioritizes a balance between fraud detection and investigation volume.
+
+Thresholds can be adjusted based on business requirements.
+
+For example:
+
+```text
+Lower threshold
+→ higher recall
+→ more fraud detected
+→ more false-positive reviews
+
+Higher threshold
+→ higher precision
+→ fewer false alarms
+→ more fraud may be missed
+```
+
+## Real-Time Inference
+
+Transactions are scored through a FastAPI endpoint.
+
+```text
+Raw Transaction
+      |
+      v
+Feature Engineering
+      |
+      v
+Saved Preprocessing Pipeline
+      |
+      v
+Random Forest
+      |
+      v
+Fraud Probability
+      |
+      v
+Threshold = 0.45
+   /            \
+  v              v
+APPROVE         REVIEW
+```
+
+## Example Prediction
+
+Example high-risk transaction:
 
 ```json
 {
-  "status": "healthy",
-  "model": "RandomForestClassifier"
-}
-```
-
-### Fraud Prediction
-
-Send a transaction to the `/predict` endpoint:
-
-```bash
-curl -X POST "http://127.0.0.1:8000/predict" \
--H "Content-Type: application/json" \
--d '{
-  "transaction_id": "TXN_TEST_001",
-  "customer_id": "CUST_TEST_001",
-  "timestamp": "2024-08-16 14:30:00",
   "amount": 250.0,
-  "merchant_id": "MERCHANT_TEST_001",
-  "merchant_category": "electronics",
-  "country": "US",
-  "device_id": "DEV_TEST_001",
-  "payment_method": "credit_card",
-  "account_age_days": 120,
-  "card_age_days": 90,
   "is_new_device": true,
   "is_international": false,
   "failed_transactions_24h": 2,
   "transactions_1h": 3,
   "transactions_24h": 8,
-  "average_customer_amount": 45.0,
   "distance_from_last_transaction_km": 120.0
-}'
+}
 ```
 
 Example response:
@@ -162,248 +248,17 @@ Example response:
 }
 ```
 
-Transactions with a fraud probability greater than or equal to `0.45` are sent for review; lower-risk transactions are approved.
-
-### Monitoring Metrics
-
-```bash
-curl http://127.0.0.1:8000/metrics
-```
-
-Example response:
+Example low-risk prediction:
 
 ```json
 {
-  "total_predictions": 2,
-  "approve_count": 1,
-  "review_count": 1,
-  "review_rate": 0.5,
-  "average_fraud_probability": 0.4172,
-  "recent_predictions_1h": 2,
-  "recent_review_rate_1h": 0.5
+  "fraud_probability": 0.0169,
+  "threshold": 0.45,
+  "decision": "APPROVE"
 }
 ```
 
-Prediction events are logged to:
-
-```text
-monitoring/predictions.csv
-```
-## Project Structure
-
-```text
-real-time-fraud-detection/
-├── api/
-│   └── main.py
-├── artifacts/
-│   ├── models/
-│   └── preprocessing/
-├── data/
-│   ├── processed/
-│   └── transactions.csv
-├── monitoring/
-│   └── predictions.csv
-├── reports/
-│   ├── figures/
-│   ├── model_metrics.csv
-│   ├── threshold_analysis.csv
-│   └── threshold_recommendation.json
-├── src/
-│   ├── analysis/
-│   │   ├── explore_dataset.py
-│   │   └── validate_dataset.py
-│   ├── data/
-│   │   └── generate_transactions.py
-│   ├── features/
-│   │   └── build_features.py
-│   ├── inference/
-│   │   └── predict.py
-│   ├── models/
-│   │   ├── train_models.py
-│   │   └── tune_threshold.py
-│   └── monitoring/
-│       └── monitor_predictions.py
-├── tests/
-├── .gitignore
-├── README.md
-└── requirements.txt
-```
-
-## Installation
-
-Clone the repository and move into the project directory:
-
-```bash
-git clone <repository-url>
-cd real-time-fraud-detection
-```
-
-Create and activate a virtual environment:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-```
-
-Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-## Run the ML Pipeline
-
-### 1. Generate synthetic transactions
-
-```bash
-python src/data/generate_transactions.py
-```
-
-### 2. Build features and preprocessing artifacts
-
-```bash
-python src/features/build_features.py
-```
-
-### 3. Train and evaluate models
-
-```bash
-python src/models/train_models.py
-```
-
-### 4. Tune classification thresholds
-
-```bash
-python src/models/tune_threshold.py
-```
-
-### 5. Start the real-time API
-
-```bash
-uvicorn api.main:app --reload
-```
-
-### 6. Run the monitoring report
-
-After sending predictions through the API:
-
-```bash
-python src/monitoring/monitor_predictions.py
-```
-## AWS Deployment
-
-The application is containerized with Docker and deployed on AWS using Amazon ECR and Amazon EC2.
-
-### Deployment Architecture
-
-```text
-GitHub Repository
-      |
-      v
-Docker Image
-      |
-      v
-Amazon ECR
-      |
-      v
-Amazon EC2
-      |
-      v
-Docker Container
-      |
-      v
-FastAPI
-      |
-      v
-Public Fraud Detection API
-```
-
-### AWS Services
-
-* **Amazon ECR** stores the private Docker image.
-* **Amazon EC2** hosts the FastAPI container.
-* **IAM Roles** provide EC2 temporary permissions to pull images from ECR.
-* **Security Groups** control access to SSH and the API port.
-
-### Build the Docker Image
-
-```bash
-docker build -t fraud-detection-api:latest .
-```
-
-### Run Locally with Docker
-
-```bash
-docker run -d \
-  --name fraud-api \
-  -p 8000:8000 \
-  fraud-detection-api:latest
-```
-
-Test the health endpoint:
-
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-### Push to Amazon ECR
-
-Authenticate Docker:
-
-```bash
-aws ecr get-login-password \
-  --region us-east-1 \
-| docker login \
-  --username AWS \
-  --password-stdin \
-  <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
-```
-
-Tag the image:
-
-```bash
-docker tag fraud-detection-api:latest \
-<AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/fraud-detection-api:latest
-```
-
-Push the image:
-
-```bash
-docker push \
-<AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/fraud-detection-api:latest
-```
-
-### Run on EC2
-
-After installing and starting Docker on the EC2 instance:
-
-```bash
-aws ecr get-login-password \
-  --region us-east-1 \
-| sudo docker login \
-  --username AWS \
-  --password-stdin \
-  <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
-```
-
-Pull the image:
-
-```bash
-sudo docker pull \
-<AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/fraud-detection-api:latest
-```
-
-Run the container:
-
-```bash
-sudo docker run -d \
-  --name fraud-api \
-  --restart unless-stopped \
-  -p 8000:8000 \
-  <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/fraud-detection-api:latest
-```
-
-The deployed API exposes:
+## API Endpoints
 
 ```text
 GET  /health
@@ -411,4 +266,88 @@ POST /predict
 GET  /metrics
 ```
 
-For security, SSH access should be restricted to trusted IP ranges while the public demo API can be exposed separately through its application port.
+Swagger documentation is available through:
+
+```text
+/docs
+```
+
+## Monitoring
+
+Every prediction is logged for lightweight production monitoring.
+
+The monitoring layer tracks:
+
+```text
+Total predictions
+Approved transactions
+Transactions sent for review
+Review rate
+Average fraud probability
+Predictions during the last hour
+Recent review rate
+```
+
+## Deployment
+
+The application is containerized with Docker and deployed on AWS.
+
+```text
+GitHub
+   |
+   v
+Docker
+   |
+   v
+Amazon ECR
+   |
+   v
+Amazon EC2
+   |
+   v
+FastAPI
+   |
+   v
+Fraud Detection API
+```
+
+AWS services used:
+
+* Amazon EC2
+* Amazon ECR
+* IAM roles
+* Security Groups
+
+## Tech Stack
+
+```text
+Python
+Pandas
+NumPy
+Scikit-learn
+XGBoost
+Random Forest
+Logistic Regression
+FastAPI
+Uvicorn
+Docker
+Amazon ECR
+Amazon EC2
+Pytest
+Matplotlib
+Git/GitHub
+```
+
+## Future Improvements
+
+Potential extensions include:
+
+* SHAP-based fraud explanations
+* HTTPS and custom domain
+* GitHub Actions CI/CD
+* automated Docker builds and ECR deployments
+* model drift monitoring
+* feature drift detection
+* real-time streaming with Kafka
+* Redis-based feature storage
+* fraud investigation dashboard
